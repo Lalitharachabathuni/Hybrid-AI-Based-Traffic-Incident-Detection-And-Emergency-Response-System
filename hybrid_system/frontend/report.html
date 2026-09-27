@@ -166,8 +166,13 @@
 <body>
 
 <header>
-  <h1 id="t-title">🚨 Report a Road Accident</h1>
-  <p id="t-sub">For anyone near an accident, even with no traffic camera nearby.</p>
+  <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+    <div>
+      <h1 id="t-title">🚨 Report a Road Accident</h1>
+      <p id="t-sub">For anyone near an accident, even with no traffic camera nearby.</p>
+    </div>
+    <a href="/app/index.html" style="color:#fff; background:rgba(255,255,255,0.25); border:1px solid rgba(255,255,255,0.4); padding:6px 14px; border-radius:20px; text-decoration:none; font-size:13px; font-weight:bold;">← Main Dashboard & Portal</a>
+  </div>
   <div class="lang-row">
     <button class="lang-btn active" data-lang="en">English</button>
     <button class="lang-btn" data-lang="te">తెలుగు</button>
@@ -250,9 +255,9 @@
 <footer id="t-footer">Hybrid AI-Based Traffic Incident Detection &amp; Emergency Response System — India</footer>
 
 <script>
-const API_BASE = (window.location.origin && window.location.origin.startsWith("http"))
+const API_BASE = localStorage.getItem("nh16_api_base") || ((window.location.origin && window.location.origin.startsWith("http"))
   ? window.location.origin
-  : "http://127.0.0.1:8000";
+  : "http://127.0.0.1:8000");
 
 const TXT = {
   en: {

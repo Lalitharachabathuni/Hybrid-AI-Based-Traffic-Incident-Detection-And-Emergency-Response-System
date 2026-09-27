@@ -1,291 +1,1653 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<title>Hybrid AI Traffic Incident Detection & Emergency Response</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
-<!-- Tailwind (CDN, no build step) -->
-<script src="https://cdn.tailwindcss.com"></script>
-
-<!-- React + ReactDOM (CDN, no build step) -->
-<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
-<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-
-<!-- Babel standalone lets us write JSX directly in the browser, so this page
-     needs no npm install / webpack build -- just open it in a browser (or
-     serve it, see README) once the FastAPI backend is running. -->
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-</head>
-<body class="bg-slate-50 text-slate-800">
-<div id="root"></div>
-
-<script type="text/babel">
-const { useState, useEffect, useCallback } = React;
-
-const API_BASE = (window.location.origin && window.location.origin.startsWith("http"))
-  ? window.location.origin
-  : "http://127.0.0.1:8000";
-
-const SEVERITY_STYLES = {
-  Normal:   "bg-green-100 text-green-800 border-green-300",
-  Minor:    "bg-yellow-100 text-yellow-800 border-yellow-300",
-  Moderate: "bg-orange-100 text-orange-800 border-orange-300",
-  Major:    "bg-red-100 text-red-800 border-red-300",
-};
-
-function Badge({ label }) {
-  const cls = SEVERITY_STYLES[label] || "bg-slate-100 text-slate-800 border-slate-300";
-  return <span className={`px-2 py-1 rounded-full text-xs font-semibold border ${cls}`}>{label}</span>;
-}
-
-function KpiCard({ title, value, accent }) {
-  return (
-    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex-1 min-w-[140px]">
-      <div className="text-sm text-slate-500">{title}</div>
-      <div className={`text-3xl font-bold mt-1 ${accent || "text-slate-800"}`}>{value}</div>
-    </div>
-  );
-}
-
-function App() {
-  const [stats, setStats] = useState({ total_incidents: 0, by_severity: {} });
-  const [incidents, setIncidents] = useState([]);
-  const [citizenReports, setCitizenReports] = useState([]);
-  const [selected, setSelected] = useState(null);
-  const [selectedCitizen, setSelectedCitizen] = useState(null);
-  const [simStatus, setSimStatus] = useState({ running: false, processed: 0 });
-  const [backendUp, setBackendUp] = useState(true);
-  const [speed, setSpeed] = useState(1000);
-  const [limit, setLimit] = useState(3000);
-
-  const fetchAll = useCallback(async () => {
-    try {
-      const [s, i, st, cr] = await Promise.all([
-        fetch(`${API_BASE}/api/stats`).then(r => r.json()),
-        fetch(`${API_BASE}/api/incidents?limit=200`).then(r => r.json()),
-        fetch(`${API_BASE}/api/simulation/status`).then(r => r.json()),
-        fetch(`${API_BASE}/api/citizen/reports?limit=200`).then(r => r.json()),
-      ]);
-      setStats(s); setIncidents(i); setSimStatus(st); setCitizenReports(cr); setBackendUp(true);
-    } catch (e) {
-      setBackendUp(false);
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hybrid AI Traffic Incident Detection & Emergency Response System | NH16 India</title>
+  
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+          },
+          colors: {
+            brand: {
+              50: '#f0fdf4',
+              100: '#dcfce7',
+              500: '#22c55e',
+              600: '#16a34a',
+              700: '#15803d',
+              900: '#14532d',
+            },
+            dark: {
+              950: '#070b14',
+              900: '#0d1322',
+              850: '#131b2e',
+              800: '#1a233a',
+              700: '#273553',
+              600: '#384b72',
+            }
+          }
+        }
+      }
     }
-  }, []);
+  </script>
 
-  useEffect(() => {
-    fetchAll();
-    const id = setInterval(fetchAll, 4000);
-    return () => clearInterval(id);
-  }, [fetchAll]);
+  <!-- Leaflet Map CSS & JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 
-  const startSim = async () => {
-    await fetch(`${API_BASE}/api/simulation/start`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ speed: Number(speed), limit: Number(limit) || null }),
-    });
-    fetchAll();
-  };
-  const stopSim = async () => { await fetch(`${API_BASE}/api/simulation/stop`, { method: "POST" }); fetchAll(); };
-  const clearIncidents = async () => { await fetch(`${API_BASE}/api/incidents`, { method: "DELETE" }); fetchAll(); };
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-  const viewReport = async (id) => {
-    const detail = await fetch(`${API_BASE}/api/incidents/${id}`).then(r => r.json());
-    setSelected(detail);
-  };
+  <!-- React 18 & ReactDOM -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-  const viewCitizenReport = async (id) => {
-    const detail = await fetch(`${API_BASE}/api/citizen/reports/${id}`).then(r => r.json());
-    setSelectedCitizen(detail);
-  };
+  <style>
+    body {
+      background-color: #080c16;
+      color: #e2e8f0;
+    }
+    .glass-panel {
+      background: rgba(19, 27, 46, 0.75);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .glass-panel-elevated {
+      background: rgba(26, 35, 58, 0.85);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+    }
+    .radar-pulse {
+      box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+      animation: pulse-ring 1.8s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+    }
+    @keyframes pulse-ring {
+      0% {
+        box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.8);
+      }
+      70% {
+        box-shadow: 0 0 0 14px rgba(239, 68, 68, 0);
+      }
+      100% {
+        box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+      }
+    }
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0d1322;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #273553;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #384b72;
+    }
+    .leaflet-popup-content-wrapper {
+      background: #131b2e !important;
+      color: #e2e8f0 !important;
+      border: 1px solid rgba(255, 255, 255, 0.15) !important;
+      border-radius: 12px !important;
+    }
+    .leaflet-popup-tip {
+      background: #131b2e !important;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col font-sans selection:bg-emerald-500 selection:text-white">
 
-  return (
-    <div className="max-w-6xl mx-auto p-6">
-      <header className="mb-6">
-        <h1 className="text-2xl font-bold text-slate-900">🚦 Hybrid AI-Based Traffic Incident Detection & Emergency Response System — India</h1>
-        <p className="text-slate-500 text-sm mt-1">
-          Sensor analytics → XGBoost severity classification → AI report generation → automated emergency notification (Police 100 · Ambulance 108 · Fire 101)
-        </p>
-        <p className="text-slate-500 text-sm mt-1">
-          Rural / camera-free areas can report an accident directly, with photo + GPS location, at{" "}
-          <a className="text-blue-600 hover:underline" href="/app/report.html" target="_blank" rel="noreferrer">/app/report.html</a>.
-        </p>
-        {!backendUp && (
-          <div className="mt-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg p-3">
-            Backend not reachable at {API_BASE}. Start it with <code>uvicorn main:app --port 8000</code> from the <code>backend/</code> folder.
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback, useMemo } = React;
+
+    const getInitialApiBase = () => {
+      const saved = localStorage.getItem("nh16_api_base");
+      if (saved) return saved;
+      if (window.location.origin && window.location.origin.startsWith("http")) {
+        return window.location.origin;
+      }
+      return "http://127.0.0.1:8000";
+    };
+
+    let API_BASE = getInitialApiBase();
+
+    // Multi-language dictionary
+    const I18N = {
+      en: {
+        system_title: "Hybrid AI Traffic Incident & Emergency Response",
+        corridor: "NH16 Highway Corridor (Vijayawada — Kavali, AP)",
+        nav_citizen: "Citizen Incident Portal",
+        nav_control_room: "Admin Control Room",
+        nav_analytics: "Corridor Analytics",
+        nav_sandbox: "AI Prediction Sandbox",
+        login_btn: "Admin Login",
+        logout_btn: "Logout",
+        emergency_strip: "Emergency Services Available 24/7:",
+        call_112: "National 112",
+        call_108: "Ambulance 108",
+        call_100: "Police 100",
+        call_101: "Fire 101",
+        call_1033: "NHAI 1033",
+        report_accident_title: "Report a Road Accident",
+        report_accident_sub: "Upload accident photo with GPS location to automatically alert emergency services.",
+        detect_loc: "Detect My Current GPS Location",
+        submit_report: "Submit Emergency Incident Report",
+        track_report: "Track Incident Report Status",
+        enter_ref: "Enter Reference No (e.g. CR-1)",
+        track_btn: "Track Status",
+      },
+      te: {
+        system_title: "హైబ్రిడ్ AI ట్రాఫిక్ ప్రమాద గుర్తింపు & అత్యవసర స్పందన వ్యవస్థ",
+        corridor: "NH16 హైవే కారిడార్ (విజయవాడ — కావలి, ఆంధ్రప్రదేశ్)",
+        nav_citizen: "పౌర ప్రమాద నివేదిక పోర్టల్",
+        nav_control_room: "కంట్రోల్ రూమ్ డ్యాష్‌బోర్డ్",
+        nav_analytics: "ట్రాఫిక్ అనలిటిక్స్",
+        nav_sandbox: "AI ప్రెడిక్షన్ టెస్టింగ్",
+        login_btn: "అడ్మిన్ లాగిన్",
+        logout_btn: "లాగౌట్",
+        emergency_strip: "24/7 అత్యవసర సహాయం అందుబాటులో ఉంది:",
+        call_112: "జాతీయ 112",
+        call_108: "అంబులెన్స్ 108",
+        call_100: "పోలీస్ 100",
+        call_101: "ఫైర్ 101",
+        call_1033: "NHAI 1033",
+        report_accident_title: "రోడ్డు ప్రమాదాన్ని నివేదించండి",
+        report_accident_sub: "ఫోటో మరియు GPS లొకేషన్ తో వెంటనే అత్యవసర బృందాలకు సమాచారం అందించండి.",
+        detect_loc: "నా ప్రస్తుత GPS లొకేషన్ గుర్తించండి",
+        submit_report: "అత్యవసర నివేదికను పంపండి",
+        track_report: "నివేదిక స్థితిని తనిఖీ చేయండి",
+        enter_ref: "రిఫరెన్స్ నంబర్ నమోదు చేయండి (ఉదా: CR-1)",
+        track_btn: "స్థితిని చూడండి",
+      },
+      hi: {
+        system_title: "हाइब्रिड AI सड़क दुर्घटना पहचान और आपातकालीन प्रतिक्रिया प्रणाली",
+        corridor: "NH16 हाईवे कॉरिडोर (विजयवाड़ा — कावली, आंध्र प्रदेश)",
+        nav_citizen: "नागरिक दुर्घटना पोर्टल",
+        nav_control_room: "कंट्रोल रूम डैशबोर्ड",
+        nav_analytics: "दुर्घटना विश्लेषण",
+        nav_sandbox: "AI भविष्यवाणी परीक्षण",
+        login_btn: "एडमिन लॉगिन",
+        logout_btn: "लॉगआउट",
+        emergency_strip: "24/7 आपातकालीन सहायता सेवाएं:",
+        call_112: "राष्ट्रीय 112",
+        call_108: "एम्बुलेंस 108",
+        call_100: "पुलिस 100",
+        call_101: "अग्निशामक 101",
+        call_1033: "NHAI 1033",
+        report_accident_title: "सड़क दुर्घटना की सूचना दें",
+        report_accident_sub: "फोटो और GPS लोकेशन के साथ तुरंत आपातकालीन सेवाओं को सूचित करें।",
+        detect_loc: "वर्तमान GPS लोकेशन प्राप्त करें",
+        submit_report: "आपातकालीन रिपोर्ट दर्ज करें",
+        track_report: "रिपोर्ट की स्थिति ट्रैक करें",
+        enter_ref: "रेफरेंस नंबर दर्ज करें (उदा: CR-1)",
+        track_btn: "स्थिति देखें",
+      }
+    };
+
+    const SEVERITY_CONFIG = {
+      Normal:   { bg: "bg-emerald-500/10", border: "border-emerald-500/30", text: "text-emerald-400", dot: "bg-emerald-500", badge: "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30" },
+      Minor:    { bg: "bg-amber-500/10",   border: "border-amber-500/30",   text: "text-amber-400",   dot: "bg-amber-500",   badge: "bg-amber-500/20 text-amber-300 border border-amber-500/30" },
+      Moderate: { bg: "bg-orange-500/10",  border: "border-orange-500/30",  text: "text-orange-400",  dot: "bg-orange-500",  badge: "bg-orange-500/20 text-orange-300 border border-orange-500/30" },
+      Major:    { bg: "bg-rose-500/10",    border: "border-rose-500/30",    text: "text-rose-400",    dot: "bg-rose-500",    badge: "bg-rose-500/20 text-rose-300 border border-rose-500/30" },
+    };
+
+    function Badge({ label }) {
+      const cfg = SEVERITY_CONFIG[label] || { badge: "bg-slate-700 text-slate-300 border border-slate-600" };
+      return <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold tracking-wide ${cfg.badge}`}>{label || "Unknown"}</span>;
+    }
+
+    function StatusBadge({ status }) {
+      const styles = {
+        'Reported': 'bg-blue-500/20 text-blue-300 border-blue-500/30',
+        'Dispatched': 'bg-amber-500/20 text-amber-300 border-amber-500/30',
+        'On Scene': 'bg-purple-500/20 text-purple-300 border-purple-500/30',
+        'Resolved': 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
+        'Active': 'bg-rose-500/20 text-rose-300 border-rose-500/30',
+        'Cleared': 'bg-slate-700 text-slate-300 border-slate-600',
+      };
+      const cls = styles[status] || 'bg-slate-700 text-slate-300 border-slate-600';
+      return <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${cls}`}>{status}</span>;
+    }
+
+    function App() {
+      const [lang, setLang] = useState('en');
+      const [activeTab, setActiveTab] = useState('citizen'); // 'citizen' | 'control_room' | 'analytics' | 'sandbox'
+      const [currentTime, setCurrentTime] = useState(new Date());
+
+      // Auth State
+      const [adminToken, setAdminToken] = useState(() => localStorage.getItem("nh16_admin_token") || "");
+      const [adminUser, setAdminUser] = useState(() => localStorage.getItem("nh16_admin_user") || "");
+      const [showLoginModal, setShowLoginModal] = useState(false);
+      const [loginUsername, setLoginUsername] = useState("admin");
+      const [loginPassword, setLoginPassword] = useState("");
+      const [loginError, setLoginError] = useState("");
+      const [loginLoading, setLoginLoading] = useState(false);
+
+      // Data States
+      const [stats, setStats] = useState({ total_incidents: 0, by_severity: {} });
+      const [incidents, setIncidents] = useState([]);
+      const [citizenReports, setCitizenReports] = useState([]);
+      const [stations, setStations] = useState([]);
+      const [analyticsData, setAnalyticsData] = useState(null);
+      const [simStatus, setSimStatus] = useState({ running: false, processed: 0, incidents_found: 0 });
+      const [backendUp, setBackendUp] = useState(true);
+
+      // Modals / Details
+      const [selectedIncident, setSelectedIncident] = useState(null);
+      const [selectedCitizenReport, setSelectedCitizenReport] = useState(null);
+
+      // Citizen Form State
+      const [citizenFile, setCitizenFile] = useState(null);
+      const [citizenPreview, setCitizenPreview] = useState(null);
+      const [citizenLat, setCitizenLat] = useState(null);
+      const [citizenLon, setCitizenLon] = useState(null);
+      const [citizenLocationText, setCitizenLocationText] = useState("");
+      const [citizenSeverity, setCitizenSeverity] = useState("Not sure");
+      const [citizenDesc, setCitizenDesc] = useState("");
+      const [citizenName, setCitizenName] = useState("");
+      const [citizenPhone, setCitizenPhone] = useState("");
+      const [citizenSubmitting, setCitizenSubmitting] = useState(false);
+      const [citizenSuccess, setCitizenSuccess] = useState(null);
+
+      // Tracking State
+      const [trackRefNo, setTrackRefNo] = useState("");
+      const [trackedReport, setTrackedReport] = useState(null);
+      const [trackLoading, setTrackLoading] = useState(false);
+      const [trackError, setTrackError] = useState("");
+
+      // Simulation Controls State
+      const [simSpeed, setSimSpeed] = useState(800);
+      const [simLimit, setSimLimit] = useState(3000);
+
+      // AI Sandbox Predictor State
+      const [sbSpeed, setSbSpeed] = useState(35.0);
+      const [sbOccupancy, setSbOccupancy] = useState(0.28);
+      const [sbFlow, setSbFlow] = useState(1400);
+      const [sbHour, setSbHour] = useState(14);
+      const [sbStation, setSbStation] = useState("Guntur");
+      const [sbDirection, setSbDirection] = useState("NB");
+      const [sbPrediction, setSbPrediction] = useState(null);
+      const [sbLoading, setSbLoading] = useState(false);
+
+      // Notification Toasts
+      const [toast, setToast] = useState(null);
+
+      const showToast = (msg, type = "info") => {
+        setToast({ msg, type });
+        setTimeout(() => setToast(null), 4000);
+      };
+
+      // Clock ticker
+      useEffect(() => {
+        const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+        return () => clearInterval(timer);
+      }, []);
+
+      // Verify Auth Token on mount
+      useEffect(() => {
+        if (adminToken) {
+          fetch(`${API_BASE}/api/auth/me`, {
+            headers: { Authorization: `Bearer ${adminToken}` }
+          })
+          .then(res => {
+            if (!res.ok) {
+              // expired or invalid
+              setAdminToken("");
+              setAdminUser("");
+              localStorage.removeItem("nh16_admin_token");
+              localStorage.removeItem("nh16_admin_user");
+            }
+          })
+          .catch(() => {});
+        }
+      }, [adminToken]);
+
+      // Fetch All System Data
+      const fetchData = useCallback(async () => {
+        try {
+          const [st, inc, cRep, sim, stns, an] = await Promise.all([
+            fetch(`${API_BASE}/api/stats`).then(r => r.json()),
+            fetch(`${API_BASE}/api/incidents?limit=200`).then(r => r.json()),
+            fetch(`${API_BASE}/api/citizen/reports?limit=200`).then(r => r.json()),
+            fetch(`${API_BASE}/api/simulation/status`).then(r => r.json()),
+            fetch(`${API_BASE}/api/stations`).then(r => r.json()),
+            fetch(`${API_BASE}/api/analytics`).then(r => r.json()),
+          ]);
+          setStats(st);
+          setIncidents(inc);
+          setCitizenReports(cRep);
+          setSimStatus(sim);
+          setStations(stns);
+          setAnalyticsData(an);
+          setBackendUp(true);
+        } catch (err) {
+          setBackendUp(false);
+        }
+      }, []);
+
+      useEffect(() => {
+        fetchData();
+        const interval = setInterval(fetchData, 4000);
+        return () => clearInterval(interval);
+      }, [fetchData]);
+
+      // Handle Admin Login
+      const handleLogin = async (e) => {
+        e.preventDefault();
+        setLoginError("");
+        setLoginLoading(true);
+        try {
+          const res = await fetch(`${API_BASE}/api/auth/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username: loginUsername, password: loginPassword })
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            setLoginError(data.detail || "Invalid credentials");
+          } else {
+            setAdminToken(data.token);
+            setAdminUser(data.username);
+            localStorage.setItem("nh16_admin_token", data.token);
+            localStorage.setItem("nh16_admin_user", data.username);
+            setShowLoginModal(false);
+            setLoginPassword("");
+            showToast(`Welcome back, ${data.username}! Admin access granted.`, "success");
+            if (activeTab !== 'control_room') setActiveTab('control_room');
+          }
+        } catch (err) {
+          setLoginError("Could not connect to authentication server.");
+        } finally {
+          setLoginLoading(false);
+        }
+      };
+
+      const handleLogout = async () => {
+        if (adminToken) {
+          fetch(`${API_BASE}/api/auth/logout`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${adminToken}` }
+          }).catch(() => {});
+        }
+        setAdminToken("");
+        setAdminUser("");
+        localStorage.removeItem("nh16_admin_token");
+        localStorage.removeItem("nh16_admin_user");
+        showToast("Logged out of Admin Control Room.", "info");
+      };
+
+      // Citizen Geolocation
+      const handleDetectLocation = () => {
+        if (!navigator.geolocation) {
+          alert("Geolocation is not supported by your browser.");
+          return;
+        }
+        setCitizenLocationText("Detecting coordinates from device GPS...");
+        navigator.geolocation.getCurrentPosition(
+          async (pos) => {
+            const lat = pos.coords.latitude;
+            const lon = pos.coords.longitude;
+            setCitizenLat(lat);
+            setCitizenLon(lon);
+            try {
+              const res = await fetch(`${API_BASE}/api/geocode?lat=${lat}&lon=${lon}`).then(r => r.json());
+              if (res && res.display_address) {
+                setCitizenLocationText(res.display_address);
+              } else {
+                setCitizenLocationText(`GPS: ${lat.toFixed(5)}, ${lon.toFixed(5)} (NH16 Highway Corridor)`);
+              }
+            } catch {
+              setCitizenLocationText(`GPS: ${lat.toFixed(5)}, ${lon.toFixed(5)}`);
+            }
+          },
+          (err) => {
+            // Default fallback coordinates around NH16 Vijayawada-Guntur stretch if browser blocks GPS
+            const fallbackLat = 16.3067;
+            const fallbackLon = 80.4365;
+            setCitizenLat(fallbackLat);
+            setCitizenLon(fallbackLon);
+            setCitizenLocationText("Guntur Corridor, NH16, Andhra Pradesh (Location Permission Required)");
+          }
+        );
+      };
+
+      // Citizen Photo Handle
+      const handleImageChange = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+          setCitizenFile(file);
+          setCitizenPreview(URL.createObjectURL(file));
+        }
+      };
+
+      // Citizen Submit Report
+      const handleCitizenSubmit = async (e) => {
+        e.preventDefault();
+        if (!citizenFile) {
+          alert("Please capture or select an accident photo.");
+          return;
+        }
+        setCitizenSubmitting(true);
+        const formData = new FormData();
+        formData.append("image", citizenFile);
+        if (citizenLat) formData.append("lat", citizenLat);
+        if (citizenLon) formData.append("lon", citizenLon);
+        formData.append("description", citizenDesc || "Roadside traffic accident reported by citizen.");
+        formData.append("severity_label", citizenSeverity);
+        formData.append("reporter_name", citizenName || "Citizen (NH16)");
+        formData.append("reporter_phone", citizenPhone || "Confidential");
+
+        try {
+          const res = await fetch(`${API_BASE}/api/citizen/report`, {
+            method: "POST",
+            body: formData,
+          });
+          const data = await res.json();
+          if (res.ok) {
+            setCitizenSuccess(data);
+            setCitizenFile(null);
+            setCitizenPreview(null);
+            setCitizenDesc("");
+            setCitizenPhone("");
+            setCitizenName("");
+            fetchData();
+            showToast(`Incident Reported Successfully! Ref: ${data.reference_no}`, "success");
+          } else {
+            alert(data.detail || "Submission failed. Please try again.");
+          }
+        } catch (err) {
+          alert("Could not connect to emergency dispatch server.");
+        } finally {
+          setCitizenSubmitting(false);
+        }
+      };
+
+      // Citizen Track Report
+      const handleTrackReport = async (e) => {
+        e.preventDefault();
+        if (!trackRefNo.trim()) return;
+        setTrackLoading(true);
+        setTrackError("");
+        setTrackedReport(null);
+        try {
+          const res = await fetch(`${API_BASE}/api/citizen/track/${encodeURIComponent(trackRefNo.trim())}`);
+          const data = await res.json();
+          if (res.ok) {
+            setTrackedReport(data);
+          } else {
+            setTrackError(data.detail || "No report found with this reference number.");
+          }
+        } catch {
+          setTrackError("Error checking tracking status.");
+        } finally {
+          setTrackLoading(false);
+        }
+      };
+
+      // Admin Status Updates
+      const handleUpdateCitizenStatus = async (reportId, newStatus) => {
+        try {
+          const res = await fetch(`${API_BASE}/api/citizen/reports/${reportId}/status`, {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${adminToken}`
+            },
+            body: JSON.stringify({ status: newStatus })
+          });
+          if (res.ok) {
+            showToast(`Report CR-${reportId} status updated to ${newStatus}`, "success");
+            fetchData();
+            if (selectedCitizenReport && selectedCitizenReport.id === reportId) {
+              setSelectedCitizenReport(prev => ({ ...prev, status: newStatus }));
+            }
+          }
+        } catch {
+          showToast("Failed to update status", "error");
+        }
+      };
+
+      const handleUpdateIncidentStatus = async (incidentId, newStatus) => {
+        try {
+          const res = await fetch(`${API_BASE}/api/incidents/${incidentId}/status`, {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${adminToken}`
+            },
+            body: JSON.stringify({ status: newStatus })
+          });
+          if (res.ok) {
+            showToast(`Incident #${incidentId} status updated to ${newStatus}`, "success");
+            fetchData();
+            if (selectedIncident && selectedIncident.id === incidentId) {
+              setSelectedIncident(prev => ({ ...prev, status: newStatus }));
+            }
+          }
+        } catch {
+          showToast("Failed to update status", "error");
+        }
+      };
+
+      // Simulation Triggers
+      const handleStartSimulation = async () => {
+        try {
+          const res = await fetch(`${API_BASE}/api/simulation/start`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${adminToken}`
+            },
+            body: JSON.stringify({ speed: Number(simSpeed), limit: Number(simLimit) || null })
+          });
+          if (res.ok) {
+            showToast("Sensor simulation started across NH16 Corridor.", "success");
+            fetchData();
+          } else {
+            const err = await res.json();
+            showToast(err.detail || "Simulation could not start.", "error");
+          }
+        } catch {
+          showToast("Simulation trigger error.", "error");
+        }
+      };
+
+      const handleStopSimulation = async () => {
+        try {
+          await fetch(`${API_BASE}/api/simulation/stop`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${adminToken}` }
+          });
+          showToast("Sensor simulation paused.", "info");
+          fetchData();
+        } catch {}
+      };
+
+      const handleClearIncidents = async () => {
+        if (!confirm("Are you sure you want to clear all incidents and alerts?")) return;
+        try {
+          await fetch(`${API_BASE}/api/incidents`, {
+            method: "DELETE",
+            headers: { Authorization: `Bearer ${adminToken}` }
+          });
+          showToast("Database records cleared.", "info");
+          fetchData();
+        } catch {}
+      };
+
+      // AI Sandbox Predictor
+      const handleRunSandboxPrediction = async () => {
+        setSbLoading(true);
+        const stnObj = stations.find(s => s.name === sbStation) || {};
+        try {
+          const res = await fetch(`${API_BASE}/api/predict`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              speed_kmph: Number(sbSpeed),
+              occupancy: Number(sbOccupancy),
+              flow: Number(sbFlow),
+              hour: Number(sbHour),
+              station_pm: stnObj.station_pm ?? 27.0,
+              location_name: stnObj.name ?? "Guntur",
+              district: stnObj.district ?? "Guntur",
+              state: stnObj.state ?? "Andhra Pradesh",
+              road: "NH16",
+              lat: stnObj.lat,
+              lon: stnObj.lon,
+              direction: sbDirection,
+              notify: true,
+            })
+          });
+          const data = await res.json();
+          setSbPrediction(data);
+          fetchData();
+          showToast(`ML Prediction: ${data.severity_label} (Confidence: ${(data.confidence * 100).toFixed(1)}%)`, "success");
+        } catch {
+          showToast("Prediction request failed", "error");
+        } finally {
+          setSbLoading(false);
+        }
+      };
+
+      const t = I18N[lang] || I18N.en;
+
+      return (
+        <div className="min-h-screen flex flex-col bg-[#070b14] text-slate-100">
+          
+          {/* Toast Notification */}
+          {toast && (
+            <div className={`fixed bottom-6 right-6 z-50 px-5 py-3 rounded-xl shadow-2xl flex items-center gap-3 text-sm font-semibold transition-all border ${
+              toast.type === "success" ? "bg-emerald-950/90 text-emerald-300 border-emerald-500/50" :
+              toast.type === "error" ? "bg-rose-950/90 text-rose-300 border-rose-500/50" :
+              "bg-slate-900/90 text-slate-200 border-slate-700"
+            }`}>
+              <span>{toast.type === "success" ? "✅" : toast.type === "error" ? "⚠️" : "ℹ️"}</span>
+              <span>{toast.msg}</span>
+            </div>
+          )}
+
+          {/* Top Navbar */}
+          <header className="sticky top-0 z-40 glass-panel border-b border-white/10 px-4 lg:px-8 py-3.5">
+            <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
+              
+              {/* Brand Logo & Name */}
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-500 to-cyan-500 flex items-center justify-center text-xl shadow-lg shadow-emerald-500/20">
+                  🚦
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h1 className="text-base lg:text-lg font-bold tracking-tight text-white">{t.system_title}</h1>
+                    <span className="hidden sm:inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span> LIVE
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400">{t.corridor}</p>
+                </div>
+              </div>
+
+              {/* Navigation Tabs */}
+              <nav className="flex items-center bg-dark-900/80 p-1 rounded-xl border border-white/5 text-xs lg:text-sm">
+                <button
+                  onClick={() => setActiveTab('citizen')}
+                  className={`px-3.5 py-1.5 rounded-lg font-medium transition-all ${activeTab === 'citizen' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
+                >
+                  📱 {t.nav_citizen}
+                </button>
+                <button
+                  onClick={() => {
+                    if (!adminToken) {
+                      setShowLoginModal(true);
+                    } else {
+                      setActiveTab('control_room');
+                    }
+                  }}
+                  className={`px-3.5 py-1.5 rounded-lg font-medium transition-all flex items-center gap-1.5 ${activeTab === 'control_room' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
+                >
+                  <span>{adminToken ? '🛰️' : '🔒'}</span>
+                  <span>{t.nav_control_room}</span>
+                </button>
+                <button
+                  onClick={() => setActiveTab('analytics')}
+                  className={`px-3.5 py-1.5 rounded-lg font-medium transition-all ${activeTab === 'analytics' ? 'bg-cyan-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
+                >
+                  📊 {t.nav_analytics}
+                </button>
+                <button
+                  onClick={() => setActiveTab('sandbox')}
+                  className={`px-3.5 py-1.5 rounded-lg font-medium transition-all ${activeTab === 'sandbox' ? 'bg-purple-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
+                >
+                  🧪 {t.nav_sandbox}
+                </button>
+              </nav>
+
+              {/* Language + Auth + Live Clock */}
+              <div className="flex items-center gap-3">
+                
+                {/* Language Switcher */}
+                <div className="flex bg-dark-900 rounded-lg p-0.5 border border-white/10 text-xs">
+                  {['en', 'te', 'hi'].map((code) => (
+                    <button
+                      key={code}
+                      onClick={() => setLang(code)}
+                      className={`px-2 py-1 rounded font-semibold uppercase ${lang === code ? 'bg-white/20 text-white' : 'text-slate-400 hover:text-white'}`}
+                    >
+                      {code}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Live Clock (Current system time) */}
+                <div className="hidden md:flex flex-col text-right font-mono text-xs text-slate-300">
+                  <span className="font-semibold text-emerald-400">{currentTime.toLocaleTimeString()}</span>
+                  <span className="text-[10px] text-slate-500">{currentTime.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                </div>
+
+                {/* Admin Auth Button */}
+                {adminToken ? (
+                  <div className="flex items-center gap-2 bg-indigo-950/60 border border-indigo-500/30 px-3 py-1.5 rounded-xl text-xs">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                    <span className="font-semibold text-indigo-300 hidden sm:inline">{adminUser}</span>
+                    <button
+                      onClick={handleLogout}
+                      className="ml-1 text-slate-400 hover:text-rose-400 transition"
+                      title="Logout"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setShowLoginModal(true)}
+                    className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition"
+                  >
+                    <span>🔒</span> {t.login_btn}
+                  </button>
+                )}
+
+              </div>
+            </div>
+          </header>
+
+          {/* Emergency Helpline Strip */}
+          <div className="bg-gradient-to-r from-rose-950 via-red-900 to-rose-950 border-b border-rose-500/20 px-4 py-2 text-center text-xs font-medium text-rose-100 flex flex-wrap items-center justify-center gap-3 sm:gap-6 shadow-inner">
+            <span className="font-bold flex items-center gap-1 text-white">🚨 {t.emergency_strip}</span>
+            <a href="tel:112" className="bg-white/10 hover:bg-white/20 px-2.5 py-0.5 rounded-full text-white font-bold transition flex items-center gap-1">📞 {t.call_112}</a>
+            <a href="tel:108" className="bg-white/10 hover:bg-white/20 px-2.5 py-0.5 rounded-full text-white font-bold transition flex items-center gap-1">🚑 {t.call_108}</a>
+            <a href="tel:100" className="bg-white/10 hover:bg-white/20 px-2.5 py-0.5 rounded-full text-white font-bold transition flex items-center gap-1">🚓 {t.call_100}</a>
+            <a href="tel:101" className="bg-white/10 hover:bg-white/20 px-2.5 py-0.5 rounded-full text-white font-bold transition flex items-center gap-1">🚒 {t.call_101}</a>
+            <a href="tel:1033" className="bg-white/10 hover:bg-white/20 px-2.5 py-0.5 rounded-full text-white font-bold transition flex items-center gap-1">🛣️ {t.call_1033}</a>
           </div>
-        )}
-      </header>
 
-      <section className="flex gap-4 flex-wrap mb-6">
-        <KpiCard title="Total Incidents" value={stats.total_incidents ?? 0} />
-        <KpiCard title="Minor" value={stats.by_severity?.Minor ?? 0} accent="text-yellow-600" />
-        <KpiCard title="Moderate" value={stats.by_severity?.Moderate ?? 0} accent="text-orange-600" />
-        <KpiCard title="Major" value={stats.by_severity?.Major ?? 0} accent="text-red-600" />
-      </section>
+          {/* Main Body Content Container */}
+          <main className="flex-1 max-w-7xl w-full mx-auto p-4 lg:p-8">
+            
+            {/* TAB 1: CITIZEN INCIDENT PORTAL */}
+            {activeTab === 'citizen' && (
+              <div className="space-y-8 animate-fadeIn">
+                
+                {/* Hero Banner */}
+                <div className="glass-panel-elevated rounded-2xl p-6 lg:p-8 border border-white/10 relative overflow-hidden">
+                  <div className="relative z-10 max-w-2xl">
+                    <span className="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 inline-block mb-3">
+                      PUBLIC SAFETY EMERGENCY PORTAL
+                    </span>
+                    <h2 className="text-2xl lg:text-3xl font-extrabold text-white tracking-tight">
+                      {t.report_accident_title}
+                    </h2>
+                    <p className="mt-2 text-sm text-slate-300 leading-relaxed">
+                      {t.report_accident_sub}
+                    </p>
+                  </div>
+                  <div className="absolute right-0 top-0 bottom-0 w-1/3 opacity-10 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-emerald-400 to-transparent pointer-events-none"></div>
+                </div>
 
-      <section className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 mb-6">
-        <h2 className="font-semibold mb-3">Dataset Replay Simulation</h2>
-        <div className="flex flex-wrap items-end gap-4">
-          <label className="text-sm">
-            Speed (x real-time)
-            <input type="number" className="block border rounded-md px-2 py-1 w-32 mt-1"
-                   value={speed} onChange={e => setSpeed(e.target.value)} />
-          </label>
-          <label className="text-sm">
-            Rows to replay
-            <input type="number" className="block border rounded-md px-2 py-1 w-32 mt-1"
-                   value={limit} onChange={e => setLimit(e.target.value)} />
-          </label>
-          <button onClick={startSim} className="bg-slate-900 text-white px-4 py-2 rounded-md text-sm hover:bg-slate-700">▶ Start</button>
-          <button onClick={stopSim} className="bg-slate-200 text-slate-800 px-4 py-2 rounded-md text-sm hover:bg-slate-300">⏹ Stop</button>
-          <button onClick={clearIncidents} className="bg-red-50 text-red-700 border border-red-200 px-4 py-2 rounded-md text-sm hover:bg-red-100">🗑 Clear incidents</button>
-          <span className="text-sm text-slate-500 ml-auto">
-            {simStatus.running ? "🟢 Running" : "🔴 Stopped"} — processed {simStatus.processed ?? 0} rows
-          </span>
-        </div>
-      </section>
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                  
+                  {/* Left Column: Reporting Form (7 Cols) */}
+                  <div className="lg:col-span-7 glass-panel rounded-2xl p-6 border border-white/10 space-y-6">
+                    <div className="flex items-center justify-between border-b border-white/10 pb-4">
+                      <h3 className="font-bold text-lg text-white flex items-center gap-2">
+                        <span>📸</span> Step 1: Accident Details & Location
+                      </h3>
+                      <span className="text-xs text-slate-400">All submissions auto-dispatched</span>
+                    </div>
 
-      <section className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-        <h2 className="font-semibold p-4 border-b border-slate-100">Incident Feed</h2>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-slate-500 text-left">
-              <tr>
-                <th className="p-3">#</th>
-                <th className="p-3">Detected At</th>
-                <th className="p-3">Severity</th>
-                <th className="p-3">Speed (km/h)</th>
-                <th className="p-3">Occupancy</th>
-                <th className="p-3">Location</th>
-                <th className="p-3">Direction</th>
-                <th className="p-3"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {incidents.length === 0 && (
-                <tr><td colSpan="8" className="p-6 text-center text-slate-400">
-                  No incidents yet. Start the simulation above, or call POST /api/predict.
-                </td></tr>
-              )}
-              {incidents.map(inc => (
-                <tr key={inc.id} className="border-t border-slate-100 hover:bg-slate-50">
-                  <td className="p-3">{inc.id}</td>
-                  <td className="p-3">{new Date(inc.detected_at).toLocaleString()}</td>
-                  <td className="p-3"><Badge label={inc.severity_label} /></td>
-                  <td className="p-3">{inc.speed_kmph != null ? inc.speed_kmph.toFixed(1) : "—"}</td>
-                  <td className="p-3">{inc.occupancy?.toFixed(3)}</td>
-                  <td className="p-3">
-                    {inc.location_name ? (
+                    <form onSubmit={handleCitizenSubmit} className="space-y-5">
+                      
+                      {/* Photo Capture / Upload */}
                       <div>
-                        <div className="font-medium text-slate-800">{inc.location_name}</div>
-                        <div className="text-xs text-slate-400">{[inc.road, inc.district, inc.state].filter(Boolean).join(", ")}</div>
+                        <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
+                          Accident Scene Photo <span className="text-rose-400">*</span>
+                        </label>
+                        <div className="border-2 border-dashed border-slate-700 hover:border-emerald-500/60 rounded-xl p-4 text-center cursor-pointer transition bg-dark-900/60">
+                          <input
+                            type="file"
+                            accept="image/*"
+                            capture="environment"
+                            onChange={handleImageChange}
+                            className="hidden"
+                            id="accident-photo-input"
+                          />
+                          <label htmlFor="accident-photo-input" className="cursor-pointer flex flex-col items-center justify-center">
+                            {citizenPreview ? (
+                              <div className="space-y-2">
+                                <img src={citizenPreview} alt="Preview" className="max-h-48 rounded-lg mx-auto object-cover border border-white/20 shadow-md" />
+                                <span className="text-xs text-emerald-400 font-semibold block">Click to change photo</span>
+                              </div>
+                            ) : (
+                              <div className="py-6 space-y-2">
+                                <div className="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center mx-auto text-2xl">
+                                  📷
+                                </div>
+                                <div className="text-sm font-semibold text-slate-200">Tap to Take Photo or Choose Image</div>
+                                <div className="text-xs text-slate-400">Supports JPG, PNG, WEBP from smartphone or camera</div>
+                              </div>
+                            )}
+                          </label>
+                        </div>
                       </div>
-                    ) : "—"}
-                  </td>
-                  <td className="p-3">{inc.direction}</td>
-                  <td className="p-3">
-                    <button onClick={() => viewReport(inc.id)} className="text-blue-600 hover:underline">View report</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
 
-      <section className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mt-6">
-        <h2 className="font-semibold p-4 border-b border-slate-100">
-          📷 Citizen-Submitted Reports (photo + GPS, rural/roadside)
-        </h2>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-slate-500 text-left">
-              <tr>
-                <th className="p-3">Ref</th>
-                <th className="p-3">Reported At</th>
-                <th className="p-3">Photo</th>
-                <th className="p-3">Severity</th>
-                <th className="p-3">Location</th>
-                <th className="p-3">Status</th>
-                <th className="p-3"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {citizenReports.length === 0 && (
-                <tr><td colSpan="7" className="p-6 text-center text-slate-400">
-                  No citizen reports yet. Share the public form at /app/report.html.
-                </td></tr>
-              )}
-              {citizenReports.map(r => (
-                <tr key={r.id} className="border-t border-slate-100 hover:bg-slate-50">
-                  <td className="p-3 font-medium">CR-{r.id}</td>
-                  <td className="p-3">{new Date(r.reported_at).toLocaleString()}</td>
-                  <td className="p-3">
-                    {r.image_path && (
-                      <img src={`${API_BASE}${r.image_path}`} alt="accident" className="w-14 h-14 object-cover rounded-md border border-slate-200" />
+                      {/* GPS Location Capture */}
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
+                            Location & Coordinates <span className="text-rose-400">*</span>
+                          </label>
+                          <button
+                            type="button"
+                            onClick={handleDetectLocation}
+                            className="text-xs text-emerald-400 hover:text-emerald-300 font-semibold flex items-center gap-1 transition"
+                          >
+                            <span>📍</span> {t.detect_loc}
+                          </button>
+                        </div>
+                        <input
+                          type="text"
+                          value={citizenLocationText}
+                          onChange={(e) => setCitizenLocationText(e.target.value)}
+                          placeholder="Detecting GPS or enter landmark / village on NH16..."
+                          className="w-full bg-dark-900 border border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                        />
+                        {citizenLat && (
+                          <div className="text-[11px] text-slate-400 mt-1 font-mono">
+                            Coordinates: {citizenLat.toFixed(5)}, {citizenLon.toFixed(5)}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Severity Selection */}
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
+                          Estimated Incident Severity
+                        </label>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                          {[
+                            { id: "Minor", label: "Minor", desc: "No injuries", icon: "⚠️" },
+                            { id: "Moderate", label: "Moderate", desc: "Injuries reported", icon: "🚨" },
+                            { id: "Major", label: "Critical", desc: "Severe / Multiple", icon: "🔥" },
+                            { id: "Not sure", label: "Not Sure", desc: "Immediate assessment", icon: "❓" }
+                          ].map((sev) => (
+                            <button
+                              type="button"
+                              key={sev.id}
+                              onClick={() => setCitizenSeverity(sev.id)}
+                              className={`p-3 rounded-xl border text-left transition ${
+                                citizenSeverity === sev.id
+                                  ? 'bg-emerald-950/60 border-emerald-500 text-emerald-200'
+                                  : 'bg-dark-900 border-slate-800 text-slate-400 hover:border-slate-700'
+                              }`}
+                            >
+                              <div className="text-sm font-bold flex items-center gap-1.5">{sev.icon} {sev.label}</div>
+                              <div className="text-[10px] text-slate-400 mt-0.5">{sev.desc}</div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Scene Description */}
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
+                          Scene Description / Vehicles Involved
+                        </label>
+                        <textarea
+                          rows={2}
+                          value={citizenDesc}
+                          onChange={(e) => setCitizenDesc(e.target.value)}
+                          placeholder="E.g., 2-car collision near Guntur bypass, lane partially blocked..."
+                          className="w-full bg-dark-900 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                        />
+                      </div>
+
+                      {/* Reporter Contact (Optional) */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">
+                            Your Name (Optional)
+                          </label>
+                          <input
+                            type="text"
+                            value={citizenName}
+                            onChange={(e) => setCitizenName(e.target.value)}
+                            placeholder="Full name"
+                            className="w-full bg-dark-900 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">
+                            Contact Number (Optional)
+                          </label>
+                          <input
+                            type="tel"
+                            value={citizenPhone}
+                            onChange={(e) => setCitizenPhone(e.target.value)}
+                            placeholder="+91 xxxxx xxxxx"
+                            className="w-full bg-dark-900 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Submit Button */}
+                      <button
+                        type="submit"
+                        disabled={citizenSubmitting}
+                        className="w-full bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-bold py-4 px-6 rounded-xl shadow-lg shadow-rose-900/40 text-base flex items-center justify-center gap-2 transition disabled:opacity-50"
+                      >
+                        {citizenSubmitting ? (
+                          <><span>⏳</span> Processing & Alerting Responders...</>
+                        ) : (
+                          <><span>🚨</span> {t.submit_report}</>
+                        )}
+                      </button>
+
+                    </form>
+
+                    {/* Submission Success Box */}
+                    {citizenSuccess && (
+                      <div className="bg-emerald-950/80 border border-emerald-500/50 rounded-xl p-5 text-emerald-200 space-y-3 animate-fadeIn">
+                        <div className="flex items-center gap-2 font-bold text-base text-emerald-300">
+                          <span>✅</span> Emergency Report Dispatched Successfully!
+                        </div>
+                        <div className="text-sm font-mono bg-dark-950/80 p-3 rounded-lg border border-emerald-500/30">
+                          <div><strong>Reference Number:</strong> <span className="text-emerald-400 font-bold">{citizenSuccess.reference_no}</span></div>
+                          <div className="text-xs text-slate-300 mt-1"><strong>Location:</strong> {citizenSuccess.address}</div>
+                          <div className="text-xs text-slate-400 mt-1"><strong>Time:</strong> {new Date(citizenSuccess.reported_at).toLocaleString()}</div>
+                        </div>
+                        <div className="text-xs text-slate-300">
+                          <strong>Notified Agencies:</strong> {citizenSuccess.notified_departments?.join(", ") || "108 Ambulance, 100 Police, 101 Fire, NHAI"}
+                        </div>
+                      </div>
                     )}
-                  </td>
-                  <td className="p-3"><Badge label={r.severity_label} /></td>
-                  <td className="p-3">{r.display_address || [r.village || r.town, r.district, r.state].filter(Boolean).join(", ") || "—"}</td>
-                  <td className="p-3">{r.status}</td>
-                  <td className="p-3">
-                    <button onClick={() => viewCitizenReport(r.id)} className="text-blue-600 hover:underline">View report</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
 
-      {selected && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4" onClick={() => setSelected(null)}>
-          <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full p-6" onClick={e => e.stopPropagation()}>
-            <div className="flex justify-between items-start mb-3">
-              <h3 className="font-semibold text-lg">Incident #{selected.id} — AI Report</h3>
-              <button onClick={() => setSelected(null)} className="text-slate-400 hover:text-slate-700">✕</button>
-            </div>
-            <pre className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs whitespace-pre-wrap">{selected.report}</pre>
-            <h4 className="font-semibold mt-4 mb-2 text-sm">Emergency Notifications Dispatched</h4>
-            <ul className="text-sm space-y-1">
-              {(selected.notifications || []).map(n => (
-                <li key={n.id}>🚨 <span className="font-medium">{n.department}</span> — {new Date(n.sent_at).toLocaleString()}</li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      )}
+                  </div>
 
-      {selectedCitizen && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4" onClick={() => setSelectedCitizen(null)}>
-          <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-            <div className="flex justify-between items-start mb-3">
-              <h3 className="font-semibold text-lg">Citizen Report CR-{selectedCitizen.id}</h3>
-              <button onClick={() => setSelectedCitizen(null)} className="text-slate-400 hover:text-slate-700">✕</button>
-            </div>
-            {selectedCitizen.image_path && (
-              <img src={`${API_BASE}${selectedCitizen.image_path}`} alt="accident" className="w-full max-h-72 object-contain rounded-lg border border-slate-200 mb-3 bg-slate-50" />
+                  {/* Right Column: Tracking & Safety Guidelines (5 Cols) */}
+                  <div className="lg:col-span-5 space-y-6">
+                    
+                    {/* Live Track Status Card */}
+                    <div className="glass-panel rounded-2xl p-6 border border-white/10 space-y-4">
+                      <h3 className="font-bold text-base text-white flex items-center gap-2">
+                        <span>🔍</span> {t.track_report}
+                      </h3>
+                      <form onSubmit={handleTrackReport} className="flex gap-2">
+                        <input
+                          type="text"
+                          value={trackRefNo}
+                          onChange={(e) => setTrackRefNo(e.target.value)}
+                          placeholder={t.enter_ref}
+                          className="flex-1 bg-dark-900 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                        />
+                        <button
+                          type="submit"
+                          disabled={trackLoading}
+                          className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl text-xs font-bold transition disabled:opacity-50"
+                        >
+                          {trackLoading ? "..." : t.track_btn}
+                        </button>
+                      </form>
+
+                      {trackError && (
+                        <div className="text-xs text-rose-400 bg-rose-950/50 p-3 rounded-lg border border-rose-800">
+                          {trackError}
+                        </div>
+                      )}
+
+                      {trackedReport && (
+                        <div className="bg-dark-900/90 rounded-xl p-4 border border-white/10 space-y-3 animate-fadeIn text-xs">
+                          <div className="flex justify-between items-center border-b border-slate-800 pb-2">
+                            <span className="font-bold text-white">CR-{trackedReport.id}</span>
+                            <StatusBadge status={trackedReport.status} />
+                          </div>
+                          <div><strong>Location:</strong> {trackedReport.display_address || "NH16 Highway Corridor"}</div>
+                          <div><strong>Reported:</strong> {new Date(trackedReport.reported_at).toLocaleString()}</div>
+                          <div><strong>Severity:</strong> <Badge label={trackedReport.severity_label} /></div>
+                          {trackedReport.notifications && trackedReport.notifications.length > 0 && (
+                            <div className="pt-2 border-t border-slate-800">
+                              <span className="font-semibold text-slate-300">Responders Dispatched:</span>
+                              <ul className="mt-1 space-y-1 text-[11px] text-slate-400">
+                                {trackedReport.notifications.map(n => (
+                                  <li key={n.id}>🚨 {n.department} — {new Date(n.sent_at).toLocaleTimeString()}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* First Responder Guidelines Card */}
+                    <div className="glass-panel rounded-2xl p-6 border border-white/10 space-y-3">
+                      <h4 className="font-bold text-sm text-emerald-400 flex items-center gap-2">
+                        <span>🛡️</span> Good Samaritan & Roadside Safety
+                      </h4>
+                      <ul className="text-xs text-slate-300 space-y-2 leading-relaxed">
+                        <li className="flex items-start gap-2">
+                          <span className="text-emerald-400 font-bold">•</span>
+                          <span><strong>Stay Safe First:</strong> Park your vehicle safely away from traffic flow and turn on hazard lights.</span>
+                        </li>
+                        <li className="flex items-start gap-2">
+                          <span className="text-emerald-400 font-bold">•</span>
+                          <span><strong>Golden Hour Protocol:</strong> Immediate medical notification within 60 minutes saves lives.</span>
+                        </li>
+                        <li className="flex items-start gap-2">
+                          <span className="text-emerald-400 font-bold">•</span>
+                          <span><strong>Good Samaritan Protection:</strong> Under Indian law, citizens helping road accident victims are protected from legal harassment.</span>
+                        </li>
+                      </ul>
+                    </div>
+
+                  </div>
+
+                </div>
+
+              </div>
             )}
-            <pre className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs whitespace-pre-wrap">{selectedCitizen.report}</pre>
-            <h4 className="font-semibold mt-4 mb-2 text-sm">Responders Notified</h4>
-            <ul className="text-sm space-y-1">
-              {(selectedCitizen.notifications || []).map(n => (
-                <li key={n.id}>🚨 <span className="font-medium">{n.department}</span> — {new Date(n.sent_at).toLocaleString()}</li>
-              ))}
-            </ul>
-          </div>
+
+            {/* TAB 2: ADMIN CONTROL ROOM DASHBOARD (Protected) */}
+            {activeTab === 'control_room' && (
+              <div className="space-y-6 animate-fadeIn">
+                
+                {/* KPI Metrics Strip */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 lg:gap-4">
+                  {[
+                    { label: "Total Incidents", val: stats.total_incidents || 0, icon: "📊", border: "border-slate-700" },
+                    { label: "Critical / Major", val: stats.by_severity?.Major || 0, icon: "🔥", border: "border-rose-500/40", text: "text-rose-400" },
+                    { label: "Moderate", val: stats.by_severity?.Moderate || 0, icon: "🚨", border: "border-orange-500/40", text: "text-orange-400" },
+                    { label: "Minor", val: stats.by_severity?.Minor || 0, icon: "⚠️", border: "border-amber-500/40", text: "text-amber-400" },
+                    { label: "Citizen Reports", val: citizenReports.length || 0, icon: "📷", border: "border-cyan-500/40", text: "text-cyan-400" },
+                    { label: "Normal Flow", val: stats.by_severity?.Normal || 0, icon: "🟢", border: "border-emerald-500/40", text: "text-emerald-400" },
+                  ].map((kpi, idx) => (
+                    <div key={idx} className={`glass-panel rounded-2xl p-4 border ${kpi.border} flex flex-col justify-between`}>
+                      <div className="text-xs text-slate-400 flex items-center justify-between">
+                        <span>{kpi.label}</span>
+                        <span>{kpi.icon}</span>
+                      </div>
+                      <div className={`text-2xl font-extrabold mt-2 ${kpi.text || "text-white"}`}>{kpi.val}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Simulation Control Bar */}
+                <div className="glass-panel-elevated rounded-2xl p-5 border border-white/10 flex flex-wrap items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-lg">
+                      🛰️
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-white">NH16 Real-Time Sensor Stream Simulation</h4>
+                      <p className="text-xs text-slate-400">Replays synchronized inductive loop sensor telemetry from Vijayawada to Kavali</p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="text-slate-400">Speed:</span>
+                      <select
+                        value={simSpeed}
+                        onChange={(e) => setSimSpeed(Number(e.target.value))}
+                        className="bg-dark-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200"
+                      >
+                        <option value={200}>200x (Slow)</option>
+                        <option value={500}>500x (Normal)</option>
+                        <option value={1000}>1000x (Fast)</option>
+                        <option value={2000}>2000x (Turbo)</option>
+                      </select>
+                    </div>
+
+                    {simStatus.running ? (
+                      <button
+                        onClick={handleStopSimulation}
+                        className="bg-rose-600 hover:bg-rose-500 text-white px-4 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5"
+                      >
+                        <span>⏹</span> Pause Stream
+                      </button>
+                    ) : (
+                      <button
+                        onClick={handleStartSimulation}
+                        className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5"
+                      >
+                        <span>▶</span> Start Live Stream
+                      </button>
+                    )}
+
+                    <button
+                      onClick={handleClearIncidents}
+                      className="bg-slate-800 hover:bg-rose-950 text-slate-300 hover:text-rose-300 border border-slate-700 hover:border-rose-800 px-3 py-1.5 rounded-xl text-xs font-semibold transition"
+                    >
+                      🗑 Clear Logs
+                    </button>
+
+                    <div className="text-xs text-slate-400 font-mono ml-2">
+                      Status: <span className={simStatus.running ? "text-emerald-400 font-bold" : "text-slate-500"}>
+                        {simStatus.running ? "🟢 Replaying" : "⚪ Idle"}
+                      </span> (Rows: {simStatus.processed || 0})
+                    </div>
+                  </div>
+                </div>
+
+                {/* Main Control Room Grid (Live Incidents & Citizen Reports) */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  
+                  {/* Sensor Incident Feed */}
+                  <div className="glass-panel rounded-2xl border border-white/10 overflow-hidden flex flex-col h-[520px]">
+                    <div className="p-4 border-b border-white/10 flex justify-between items-center bg-dark-900/60">
+                      <h3 className="font-bold text-sm text-white flex items-center gap-2">
+                        <span>🚨</span> Live Sensor Incident Stream
+                      </h3>
+                      <a
+                        href={`${API_BASE}/api/export/incidents/csv`}
+                        className="text-xs text-cyan-400 hover:text-cyan-300 font-semibold flex items-center gap-1"
+                      >
+                        <span>📥</span> Export CSV
+                      </a>
+                    </div>
+                    <div className="flex-1 overflow-y-auto divide-y divide-white/5">
+                      {incidents.length === 0 ? (
+                        <div className="p-8 text-center text-slate-500 text-sm">
+                          No sensor incidents detected yet. Start the stream above or use the AI Sandbox.
+                        </div>
+                      ) : (
+                        incidents.map((inc) => (
+                          <div
+                            key={inc.id}
+                            onClick={() => setSelectedIncident(inc)}
+                            className="p-3.5 hover:bg-white/5 cursor-pointer transition flex items-center justify-between gap-3 text-xs"
+                          >
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono font-bold text-slate-400">#{inc.id}</span>
+                                <Badge label={inc.severity_label} />
+                                <span className="font-semibold text-slate-200">{inc.location_name || "NH16 Highway"}</span>
+                                <span className="text-[10px] text-slate-500 font-mono">({inc.direction})</span>
+                              </div>
+                              <div className="text-[11px] text-slate-400">
+                                Speed: <span className="text-slate-200 font-bold">{inc.speed_kmph?.toFixed(1)} km/h</span> · Occupancy: {inc.occupancy?.toFixed(2)} · Flow: {inc.flow?.toFixed(0)} veh/h
+                              </div>
+                              <div className="text-[10px] text-slate-500">
+                                Detected: {new Date(inc.detected_at).toLocaleString()}
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <StatusBadge status={inc.status || "Active"} />
+                              <span className="block text-[11px] text-cyan-400 mt-1 hover:underline">View AI Report →</span>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Citizen Reports Feed */}
+                  <div className="glass-panel rounded-2xl border border-white/10 overflow-hidden flex flex-col h-[520px]">
+                    <div className="p-4 border-b border-white/10 flex justify-between items-center bg-dark-900/60">
+                      <h3 className="font-bold text-sm text-white flex items-center gap-2">
+                        <span>📷</span> Citizen Accident Submissions (Photo + GPS)
+                      </h3>
+                      <a
+                        href={`${API_BASE}/api/export/citizen/csv`}
+                        className="text-xs text-cyan-400 hover:text-cyan-300 font-semibold flex items-center gap-1"
+                      >
+                        <span>📥</span> Export CSV
+                      </a>
+                    </div>
+                    <div className="flex-1 overflow-y-auto divide-y divide-white/5">
+                      {citizenReports.length === 0 ? (
+                        <div className="p-8 text-center text-slate-500 text-sm">
+                          No citizen submissions yet. Reports submitted via the Citizen Portal will appear here in real time.
+                        </div>
+                      ) : (
+                        citizenReports.map((cr) => (
+                          <div
+                            key={cr.id}
+                            onClick={() => setSelectedCitizenReport(cr)}
+                            className="p-3.5 hover:bg-white/5 cursor-pointer transition flex items-center justify-between gap-3 text-xs"
+                          >
+                            <div className="flex items-center gap-3">
+                              {cr.image_path ? (
+                                <img src={`${API_BASE}${cr.image_path}`} alt="Accident" className="w-12 h-12 rounded-lg object-cover border border-white/10 flex-shrink-0" />
+                              ) : (
+                                <div className="w-12 h-12 rounded-lg bg-slate-800 flex items-center justify-center text-lg flex-shrink-0">📷</div>
+                              )}
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-bold text-white">CR-{cr.id}</span>
+                                  <Badge label={cr.severity_label} />
+                                </div>
+                                <div className="text-[11px] text-slate-300 truncate max-w-[200px] sm:max-w-xs">
+                                  {cr.display_address || [cr.village, cr.district, cr.state].filter(Boolean).join(", ") || "NH16 Corridor"}
+                                </div>
+                                <div className="text-[10px] text-slate-500">
+                                  Reported: {new Date(cr.reported_at).toLocaleString()}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <StatusBadge status={cr.status} />
+                              <span className="block text-[11px] text-cyan-400 mt-1 hover:underline">Review & Dispatch →</span>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                </div>
+
+              </div>
+            )}
+
+            {/* TAB 3: CORRIDOR ANALYTICS & CHARTS */}
+            {activeTab === 'analytics' && (
+              <div className="space-y-6 animate-fadeIn">
+                <div className="glass-panel-elevated rounded-2xl p-6 border border-white/10">
+                  <h3 className="font-bold text-lg text-white">NH16 Highway Corridor Analytics & Intelligence</h3>
+                  <p className="text-xs text-slate-400 mt-1">Aggregated statistics, severity distributions, and multi-agency response metrics calculated directly from verified system inputs.</p>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  
+                  {/* Severity Distribution */}
+                  <div className="glass-panel rounded-2xl p-6 border border-white/10 space-y-4">
+                    <h4 className="font-bold text-sm text-slate-200">Incident Severity Breakdown</h4>
+                    <div className="space-y-3">
+                      {[
+                        { label: "Major / Critical Incidents", count: stats.by_severity?.Major || 0, color: "bg-rose-500" },
+                        { label: "Moderate Incidents", count: stats.by_severity?.Moderate || 0, color: "bg-orange-500" },
+                        { label: "Minor Incidents", count: stats.by_severity?.Minor || 0, color: "bg-amber-500" },
+                        { label: "Citizen Submitted Crashes", count: citizenReports.length || 0, color: "bg-cyan-500" },
+                      ].map((item, i) => (
+                        <div key={i} className="space-y-1">
+                          <div className="flex justify-between text-xs font-semibold">
+                            <span className="text-slate-300">{item.label}</span>
+                            <span className="text-white font-mono">{item.count}</span>
+                          </div>
+                          <div className="w-full bg-dark-900 rounded-full h-2.5 overflow-hidden">
+                            <div
+                              className={`${item.color} h-2.5 rounded-full transition-all duration-500`}
+                              style={{ width: `${Math.min(100, Math.max(8, (item.count / (stats.total_incidents || 1)) * 100))}%` }}
+                            ></div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* NH16 Highway Corridor Stations */}
+                  <div className="glass-panel rounded-2xl p-6 border border-white/10 space-y-4">
+                    <h4 className="font-bold text-sm text-slate-200">NH16 Monitoring Stations (Vijayawada — Kavali)</h4>
+                    <div className="overflow-x-auto max-h-64 overflow-y-auto">
+                      <table className="w-full text-xs text-left">
+                        <thead className="text-slate-500 border-b border-slate-800">
+                          <tr>
+                            <th className="pb-2">Station</th>
+                            <th className="pb-2">District</th>
+                            <th className="pb-2">Postmile (KM)</th>
+                            <th className="pb-2">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-800">
+                          {stations.map((stn, idx) => (
+                            <tr key={idx} className="hover:bg-white/5">
+                              <td className="py-2 font-semibold text-white">{stn.name}</td>
+                              <td className="py-2 text-slate-400">{stn.district}</td>
+                              <td className="py-2 font-mono text-slate-300">KM {stn.station_pm}</td>
+                              <td className="py-2 text-emerald-400 font-semibold">🟢 Active</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+            )}
+
+            {/* TAB 4: AI PREDICTION SANDBOX */}
+            {activeTab === 'sandbox' && (
+              <div className="space-y-6 animate-fadeIn">
+                <div className="glass-panel-elevated rounded-2xl p-6 border border-white/10">
+                  <h3 className="font-bold text-lg text-white">XGBoost Incident Severity Classification Sandbox</h3>
+                  <p className="text-xs text-slate-400 mt-1">Directly test any raw sensor telemetry inputs against the trained model without fabricating data.</p>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                  
+                  {/* Inputs Controls */}
+                  <div className="lg:col-span-7 glass-panel rounded-2xl p-6 border border-white/10 space-y-5">
+                    <h4 className="font-bold text-sm text-white">Adjust Sensor Telemetry Values</h4>
+
+                    <div className="space-y-4">
+                      
+                      <div>
+                        <div className="flex justify-between text-xs font-semibold mb-1">
+                          <span className="text-slate-300">Vehicle Speed (km/h)</span>
+                          <span className="text-cyan-400 font-mono font-bold">{sbSpeed} km/h</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="140"
+                          step="1"
+                          value={sbSpeed}
+                          onChange={(e) => setSbSpeed(Number(e.target.value))}
+                          className="w-full accent-emerald-500 cursor-pointer"
+                        />
+                      </div>
+
+                      <div>
+                        <div className="flex justify-between text-xs font-semibold mb-1">
+                          <span className="text-slate-300">Lane Occupancy (0.0 to 1.0)</span>
+                          <span className="text-cyan-400 font-mono font-bold">{sbOccupancy}</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0.01"
+                          max="1.0"
+                          step="0.01"
+                          value={sbOccupancy}
+                          onChange={(e) => setSbOccupancy(Number(e.target.value))}
+                          className="w-full accent-emerald-500 cursor-pointer"
+                        />
+                      </div>
+
+                      <div>
+                        <div className="flex justify-between text-xs font-semibold mb-1">
+                          <span className="text-slate-300">Traffic Flow (vehicles / hour)</span>
+                          <span className="text-cyan-400 font-mono font-bold">{sbFlow} veh/h</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="3000"
+                          step="50"
+                          value={sbFlow}
+                          onChange={(e) => setSbFlow(Number(e.target.value))}
+                          className="w-full accent-emerald-500 cursor-pointer"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-300 mb-1">Station on NH16</label>
+                          <select
+                            value={sbStation}
+                            onChange={(e) => setSbStation(e.target.value)}
+                            className="w-full bg-dark-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-200"
+                          >
+                            {stations.map(s => <option key={s.name} value={s.name}>{s.name} (KM {s.station_pm})</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-300 mb-1">Direction</label>
+                          <select
+                            value={sbDirection}
+                            onChange={(e) => setSbDirection(e.target.value)}
+                            className="w-full bg-dark-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-200"
+                          >
+                            <option value="NB">Northbound (To Vijayawada)</option>
+                            <option value="SB">Southbound (To Kavali/Nellore)</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={handleRunSandboxPrediction}
+                        disabled={sbLoading}
+                        className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 px-4 rounded-xl text-sm transition disabled:opacity-50 flex items-center justify-center gap-2"
+                      >
+                        {sbLoading ? "Evaluating XGBoost Model..." : "⚡ Run Real-Time AI Prediction"}
+                      </button>
+
+                    </div>
+                  </div>
+
+                  {/* Output Card */}
+                  <div className="lg:col-span-5 glass-panel rounded-2xl p-6 border border-white/10 space-y-4">
+                    <h4 className="font-bold text-sm text-white">Model Inference Output</h4>
+
+                    {sbPrediction ? (
+                      <div className="space-y-4 animate-fadeIn">
+                        <div className="bg-dark-900/90 rounded-xl p-4 border border-white/10 space-y-3">
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs text-slate-400">Classified Severity:</span>
+                            <Badge label={sbPrediction.severity_label} />
+                          </div>
+                          <div className="flex justify-between items-center text-xs">
+                            <span className="text-slate-400">Model Confidence:</span>
+                            <span className="font-mono font-bold text-emerald-400">{(sbPrediction.confidence * 100).toFixed(1)}%</span>
+                          </div>
+                          <div className="flex justify-between items-center text-xs">
+                            <span className="text-slate-400">Severity Code:</span>
+                            <span className="font-mono text-slate-200">{sbPrediction.severity_code} / 3</span>
+                          </div>
+                        </div>
+
+                        {sbPrediction.report && (
+                          <div className="space-y-2">
+                            <span className="text-xs font-semibold text-slate-300">Generated AI Incident Report:</span>
+                            <pre className="bg-dark-950 p-3 rounded-xl border border-white/10 text-[11px] font-mono text-slate-300 whitespace-pre-wrap max-h-48 overflow-y-auto">
+                              {sbPrediction.report}
+                            </pre>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="p-8 text-center text-slate-500 text-xs">
+                        Adjust sliders and click "Run Real-Time AI Prediction" to see live XGBoost classification.
+                      </div>
+                    )}
+                  </div>
+
+                </div>
+              </div>
+            )}
+
+          </main>
+
+          {/* ADMIN LOGIN MODAL */}
+          {showLoginModal && (
+            <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowLoginModal(false)}>
+              <div className="glass-panel-elevated rounded-2xl max-w-md w-full p-6 border border-white/20 shadow-2xl space-y-5 animate-fadeIn" onClick={e => e.stopPropagation()}>
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                      <span>🔒</span> Admin Authentication
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-1">Control Room & Incident Management Access</p>
+                  </div>
+                  <button onClick={() => setShowLoginModal(false)} className="text-slate-400 hover:text-white">✕</button>
+                </div>
+
+                {loginError && (
+                  <div className="bg-rose-950/80 border border-rose-500/50 text-rose-300 text-xs p-3 rounded-xl">
+                    {loginError}
+                  </div>
+                )}
+
+                <form onSubmit={handleLogin} className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Admin Username</label>
+                    <input
+                      type="text"
+                      required
+                      value={loginUsername}
+                      onChange={e => setLoginUsername(e.target.value)}
+                      className="w-full bg-dark-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Password</label>
+                    <input
+                      type="password"
+                      required
+                      value={loginPassword}
+                      onChange={e => setLoginPassword(e.target.value)}
+                      placeholder="Enter admin password"
+                      className="w-full bg-dark-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  <div className="bg-indigo-950/40 border border-indigo-500/20 rounded-xl p-3 text-[11px] text-indigo-300 flex justify-between items-center">
+                    <span>Default demo credentials: <strong>admin</strong> / <strong>admin123</strong></span>
+                    <button
+                      type="button"
+                      onClick={() => { setLoginUsername("admin"); setLoginPassword("admin123"); }}
+                      className="text-xs text-indigo-400 underline font-semibold ml-2"
+                    >
+                      Fill
+                    </button>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={loginLoading}
+                    className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl text-sm transition disabled:opacity-50"
+                  >
+                    {loginLoading ? "Verifying..." : "Sign In to Control Room"}
+                  </button>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* INCIDENT DETAIL MODAL */}
+          {selectedIncident && (
+            <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setSelectedIncident(null)}>
+              <div className="glass-panel-elevated rounded-2xl max-w-2xl w-full p-6 border border-white/20 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto animate-fadeIn" onClick={e => e.stopPropagation()}>
+                <div className="flex justify-between items-start border-b border-white/10 pb-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-base font-bold text-white">Incident #{selectedIncident.id}</h3>
+                      <Badge label={selectedIncident.severity_label} />
+                      <StatusBadge status={selectedIncident.status || "Active"} />
+                    </div>
+                    <p className="text-xs text-slate-400 mt-0.5">{selectedIncident.location_name || "NH16 Highway"} · {new Date(selectedIncident.detected_at).toLocaleString()}</p>
+                  </div>
+                  <button onClick={() => setSelectedIncident(null)} className="text-slate-400 hover:text-white">✕</button>
+                </div>
+
+                {/* Status Update Dropdown for Admin */}
+                {adminToken && (
+                  <div className="flex items-center gap-2 bg-dark-900/80 p-3 rounded-xl border border-white/10 text-xs">
+                    <span className="font-semibold text-slate-300">Update Incident Status:</span>
+                    <select
+                      value={selectedIncident.status || "Active"}
+                      onChange={(e) => handleUpdateIncidentStatus(selectedIncident.id, e.target.value)}
+                      className="bg-dark-950 border border-slate-700 rounded-lg px-2.5 py-1 text-slate-200 text-xs"
+                    >
+                      <option value="Active">Active (Ongoing Alert)</option>
+                      <option value="Responding">Responding (En Route)</option>
+                      <option value="Cleared">Cleared / Resolved</option>
+                    </select>
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <span className="text-xs font-semibold text-slate-300">AI Incident Analysis Report:</span>
+                  <pre className="bg-dark-950 p-3 rounded-xl border border-white/10 text-xs font-mono text-slate-300 whitespace-pre-wrap">
+                    {selectedIncident.report}
+                  </pre>
+                </div>
+
+                {selectedIncident.notifications && selectedIncident.notifications.length > 0 && (
+                  <div className="space-y-2 pt-2 border-t border-white/10">
+                    <span className="text-xs font-semibold text-slate-300">Emergency Responders Dispatched:</span>
+                    <ul className="text-xs space-y-1 text-slate-400">
+                      {selectedIncident.notifications.map(n => (
+                        <li key={n.id} className="flex items-center gap-2">
+                          <span>🚨</span> <strong>{n.department}:</strong> {n.message}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* CITIZEN REPORT DETAIL MODAL */}
+          {selectedCitizenReport && (
+            <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setSelectedCitizenReport(null)}>
+              <div className="glass-panel-elevated rounded-2xl max-w-2xl w-full p-6 border border-white/20 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto animate-fadeIn" onClick={e => e.stopPropagation()}>
+                <div className="flex justify-between items-start border-b border-white/10 pb-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-base font-bold text-white">Citizen Report CR-{selectedCitizenReport.id}</h3>
+                      <Badge label={selectedCitizenReport.severity_label} />
+                      <StatusBadge status={selectedCitizenReport.status} />
+                    </div>
+                    <p className="text-xs text-slate-400 mt-0.5">{new Date(selectedCitizenReport.reported_at).toLocaleString()}</p>
+                  </div>
+                  <button onClick={() => setSelectedCitizenReport(null)} className="text-slate-400 hover:text-white">✕</button>
+                </div>
+
+                {/* Status Update Dropdown for Admin */}
+                {adminToken && (
+                  <div className="flex items-center gap-2 bg-dark-900/80 p-3 rounded-xl border border-white/10 text-xs">
+                    <span className="font-semibold text-slate-300">Update Incident Lifecycle Status:</span>
+                    <select
+                      value={selectedCitizenReport.status}
+                      onChange={(e) => handleUpdateCitizenStatus(selectedCitizenReport.id, e.target.value)}
+                      className="bg-dark-950 border border-slate-700 rounded-lg px-2.5 py-1 text-slate-200 text-xs"
+                    >
+                      <option value="Reported">Reported</option>
+                      <option value="Dispatched">Dispatched (Units Mobilized)</option>
+                      <option value="On Scene">On Scene (First Responders Arrived)</option>
+                      <option value="Resolved">Resolved (Cleared & Hospitalized)</option>
+                    </select>
+                  </div>
+                )}
+
+                {selectedCitizenReport.image_path && (
+                  <div className="rounded-xl overflow-hidden border border-white/10">
+                    <img src={`${API_BASE}${selectedCitizenReport.image_path}`} alt="Accident Scene" className="w-full max-h-72 object-contain bg-black" />
+                  </div>
+                )}
+
+                <div className="bg-dark-950 p-3 rounded-xl border border-white/10 text-xs space-y-1">
+                  <div><strong>Location:</strong> {selectedCitizenReport.display_address || "NH16 Highway"}</div>
+                  {selectedCitizenReport.lat && <div><strong>GPS:</strong> {selectedCitizenReport.lat.toFixed(5)}, {selectedCitizenReport.lon.toFixed(5)}</div>}
+                  {selectedCitizenReport.reporter_name && <div><strong>Reporter:</strong> {selectedCitizenReport.reporter_name} ({selectedCitizenReport.reporter_phone || "No phone"})</div>}
+                </div>
+
+                <div className="space-y-2">
+                  <span className="text-xs font-semibold text-slate-300">AI Generated Dispatch Report:</span>
+                  <pre className="bg-dark-950 p-3 rounded-xl border border-white/10 text-xs font-mono text-slate-300 whitespace-pre-wrap">
+                    {selectedCitizenReport.report}
+                  </pre>
+                </div>
+
+                {selectedCitizenReport.notifications && selectedCitizenReport.notifications.length > 0 && (
+                  <div className="space-y-2 pt-2 border-t border-white/10">
+                    <span className="text-xs font-semibold text-slate-300">Emergency Responders Dispatched:</span>
+                    <ul className="text-xs space-y-1 text-slate-400">
+                      {selectedCitizenReport.notifications.map(n => (
+                        <li key={n.id} className="flex items-center gap-2">
+                          <span>🚨</span> <strong>{n.department}:</strong> {n.message}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Footer */}
+          <footer className="border-t border-white/5 py-6 px-4 text-center text-xs text-slate-500">
+            <p>Department of Allied Computer Science & Engineering — Batch CSM-03</p>
+            <p className="mt-1">Hybrid AI-Based Traffic Incident Detection and Emergency Response System (NH16 Highway Corridor, Andhra Pradesh)</p>
+          </footer>
+
         </div>
-      )}
+      );
+    }
 
-      <footer className="text-center text-xs text-slate-400 mt-8">
-        Department of Allied Computer Science &amp; Engineering — Hybrid AI-Based Traffic Incident Detection and Emergency Response System (India)
-      </footer>
-    </div>
-  );
-}
-
-ReactDOM.createRoot(document.getElementById("root")).render(<App />);
-</script>
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
 </body>
 </html>

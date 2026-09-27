@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "public": true,
+  "outputDirectory": "hybrid_system/frontend",
+  "cleanUrls": true,
+  "trailingSlash": false,
+  "routes": [
+    { "src": "/app/(.*)", "dest": "/$1" },
+    { "src": "/report.html", "dest": "/report.html" },
+    { "src": "/index.html", "dest": "/index.html" },
+    { "src": "/", "dest": "/index.html" }
+  ]
+}
