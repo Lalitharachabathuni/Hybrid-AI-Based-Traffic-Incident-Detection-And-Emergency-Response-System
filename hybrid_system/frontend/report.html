@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=2.0" />
+<title>Report a Road Accident | ప్రమాద నివేదిక | दुर्घटना रिपोर्ट</title>
+<style>
+  :root {
+    --red: #c62828;
+    --red-dark: #8e1616;
+    --green: #2e7d32;
+    --amber: #e65100;
+    --ink: #1c1c1c;
+    --muted: #5f5f5f;
+    --line: #d8d8d8;
+    --bg: #f6f5f2;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, Roboto, "Noto Sans", "Noto Sans Telugu", "Noto Sans Devanagari", Arial, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    font-size: 18px;
+    line-height: 1.4;
+  }
+  header {
+    background: var(--red);
+    color: #fff;
+    padding: 14px 16px;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  header h1 { margin: 0; font-size: 20px; }
+  header p { margin: 4px 0 0; font-size: 14px; opacity: 0.9; }
+  .lang-row { margin-top: 10px; display: flex; gap: 8px; }
+  .lang-btn {
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.5);
+    color: #fff;
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 14px;
+  }
+  .lang-btn.active { background: #fff; color: var(--red); font-weight: bold; }
+
+  .emergency-strip {
+    background: var(--red-dark);
+    color: #fff;
+    text-align: center;
+    font-size: 15px;
+    padding: 8px;
+  }
+  .emergency-strip a { color: #fff; font-weight: bold; }
+
+  main { max-width: 560px; margin: 0 auto; padding: 16px 16px 90px; }
+
+  .card {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 18px;
+    margin-bottom: 16px;
+  }
+  .step-label {
+    display: inline-block;
+    background: var(--ink);
+    color: #fff;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    text-align: center;
+    line-height: 28px;
+    font-size: 15px;
+    margin-right: 8px;
+  }
+  h2 { font-size: 19px; margin: 0 0 10px; display: flex; align-items: center; }
+
+  .big-btn {
+    width: 100%;
+    padding: 16px;
+    font-size: 18px;
+    font-weight: bold;
+    border-radius: 12px;
+    border: none;
+    cursor: pointer;
+    margin-top: 8px;
+  }
+  .btn-camera { background: #263238; color: #fff; }
+  .btn-location { background: #0d47a1; color: #fff; }
+  .btn-submit { background: var(--red); color: #fff; font-size: 20px; padding: 18px; }
+  .btn-submit:disabled { background: #bbb; cursor: not-allowed; }
+  .btn-secondary { background: #eee; color: var(--ink); font-weight: normal; font-size: 15px; }
+
+  #preview {
+    margin-top: 10px;
+    max-width: 100%;
+    border-radius: 10px;
+    display: none;
+    max-height: 260px;
+    object-fit: cover;
+  }
+
+  .status-line { font-size: 15px; margin-top: 8px; color: var(--muted); }
+  .status-ok { color: var(--green); font-weight: bold; }
+  .status-err { color: var(--red); font-weight: bold; }
+
+  .manual-fields { display: none; margin-top: 10px; }
+  .manual-fields.open { display: block; }
+  .field { margin-bottom: 10px; }
+  .field label { display: block; font-size: 14px; color: var(--muted); margin-bottom: 4px; }
+  .field input, .field textarea, .field select {
+    width: 100%;
+    padding: 10px;
+    font-size: 16px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    font-family: inherit;
+  }
+  .link-btn {
+    background: none; border: none; color: #0d47a1; font-size: 15px;
+    text-decoration: underline; padding: 6px 0; cursor: pointer;
+  }
+
+  .severity-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; }
+  .sev-btn {
+    padding: 14px 8px;
+    border-radius: 10px;
+    border: 2px solid var(--line);
+    background: #fff;
+    font-size: 15px;
+    font-weight: bold;
+    cursor: pointer;
+  }
+  .sev-btn.selected { border-color: var(--ink); background: #f0f0f0; }
+  .sev-minor.selected { border-color: #f9a825; background: #fff8e1; }
+  .sev-moderate.selected { border-color: var(--amber); background: #fff3e0; }
+  .sev-major.selected { border-color: var(--red); background: #ffebee; }
+  .sev-unsure.selected { border-color: #616161; background: #eeeeee; }
+
+  #confirmScreen { display: none; }
+  #confirmScreen .ref { font-size: 26px; font-weight: bold; color: var(--green); }
+  #confirmScreen pre {
+    white-space: pre-wrap;
+    background: #fafafa;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 12px;
+    font-size: 14px;
+  }
+  .dept-chip {
+    display: inline-block;
+    background: #ffebee;
+    color: var(--red-dark);
+    border: 1px solid #f3c1c1;
+    border-radius: 20px;
+    padding: 5px 12px;
+    font-size: 13px;
+    margin: 3px 4px 0 0;
+  }
+  footer { text-align: center; font-size: 12px; color: var(--muted); padding: 20px; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1 id="t-title">🚨 Report a Road Accident</h1>
+  <p id="t-sub">For anyone near an accident, even with no traffic camera nearby.</p>
+  <div class="lang-row">
+    <button class="lang-btn active" data-lang="en">English</button>
+    <button class="lang-btn" data-lang="te">తెలుగు</button>
+    <button class="lang-btn" data-lang="hi">हिंदी</button>
+  </div>
+</header>
+<div class="emergency-strip">
+  <span id="t-strip">In a life-threatening emergency, call now:</span>
+  <a href="tel:108">108 Ambulance</a> · <a href="tel:100">100 Police</a> · <a href="tel:112">112</a>
+</div>
+
+<main>
+  <div id="formScreen">
+
+    <div class="card">
+      <h2><span class="step-label">1</span><span id="t-step1">Add a photo</span></h2>
+      <input type="file" id="photoInput" accept="image/*" capture="environment" class="hidden" />
+      <button class="big-btn btn-camera" id="photoBtn">📷 <span id="t-photobtn">Take / Choose Photo</span></button>
+      <img id="preview" alt="preview" />
+      <div class="status-line" id="photoStatus"></div>
+    </div>
+
+    <div class="card">
+      <h2><span class="step-label">2</span><span id="t-step2">Share the location</span></h2>
+      <button class="big-btn btn-location" id="locBtn">📍 <span id="t-locbtn">Use My Current Location</span></button>
+      <div class="status-line" id="locStatus"></div>
+      <button class="link-btn" id="manualToggle" type="button"><span id="t-manual">Enter location manually instead</span></button>
+      <div class="manual-fields" id="manualFields">
+        <div class="field"><label id="t-village">Village / Town</label><input type="text" id="villageInput" /></div>
+        <div class="field"><label id="t-district">District</label><input type="text" id="districtInput" /></div>
+        <div class="field"><label id="t-state">State</label><input type="text" id="stateInput" /></div>
+        <div class="field"><label id="t-pincode">PIN Code</label><input type="text" id="pincodeInput" inputmode="numeric" /></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2><span class="step-label">3</span><span id="t-step3">How serious does it look?</span></h2>
+      <div class="severity-grid">
+        <button class="sev-btn sev-minor" data-sev="Minor" id="sevMinorLbl">🟡 Minor</button>
+        <button class="sev-btn sev-moderate" data-sev="Moderate" id="sevModerateLbl">🟠 Moderate</button>
+        <button class="sev-btn sev-major" data-sev="Major" id="sevMajorLbl">🔴 Severe</button>
+        <button class="sev-btn sev-unsure selected" data-sev="Not sure" id="sevUnsureLbl">❔ Not sure</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2><span id="t-step4">Anything else? (optional)</span></h2>
+      <div class="field">
+        <label id="t-desc">What happened?</label>
+        <textarea id="descInput" rows="3"></textarea>
+      </div>
+      <div class="field">
+        <label id="t-phone">Your phone number (optional, for a callback)</label>
+        <input type="tel" id="phoneInput" inputmode="tel" />
+      </div>
+    </div>
+
+    <button class="big-btn btn-submit" id="submitBtn" disabled>🚨 <span id="t-submit">Send Report Now</span></button>
+    <div class="status-line" id="submitStatus"></div>
+  </div>
+
+  <div id="confirmScreen">
+    <div class="card">
+      <div id="t-sentTitle" style="font-weight:bold; font-size:18px;">✅ Report sent</div>
+      <div class="ref" id="refNo"></div>
+      <div style="margin-top:8px;"><span id="t-addrLbl">Location recorded:</span> <span id="addrOut"></span></div>
+      <div style="margin-top:10px;">
+        <span id="t-notifiedLbl">Notified:</span><br/>
+        <div id="deptChips"></div>
+      </div>
+      <div style="margin-top:14px;">
+        <span id="t-reportLbl" style="font-weight:bold;">Full report:</span>
+        <pre id="reportOut"></pre>
+      </div>
+      <button class="big-btn btn-secondary" id="againBtn"><span id="t-again">Report Another Accident</span></button>
+    </div>
+  </div>
+</main>
+
+<footer id="t-footer">Hybrid AI-Based Traffic Incident Detection &amp; Emergency Response System — India</footer>
+
+<script>
+const API_BASE = (window.location.origin && window.location.origin.startsWith("http"))
+  ? window.location.origin
+  : "http://127.0.0.1:8000";
+
+const TXT = {
+  en: {
+    title: "🚨 Report a Road Accident", sub: "For anyone near an accident, even with no traffic camera nearby.",
+    strip: "In a life-threatening emergency, call now:",
+    step1: "Add a photo", photobtn: "Take / Choose Photo",
+    step2: "Share the location", locbtn: "Use My Current Location", manual: "Enter location manually instead",
+    village: "Village / Town", district: "District", state: "State", pincode: "PIN Code",
+    step3: "How serious does it look?", step4: "Anything else? (optional)",
+    desc: "What happened?", phone: "Your phone number (optional, for a callback)",
+    submit: "Send Report Now",
+    sentTitle: "✅ Report sent", addrLbl: "Location recorded:", notifiedLbl: "Notified:",
+    reportLbl: "Full report:", again: "Report Another Accident",
+    footer: "Hybrid AI-Based Traffic Incident Detection & Emergency Response System — India",
+    locating: "Getting your location…", locOk: "Location captured:", locErr: "Could not get location automatically. Please enter it manually below.",
+    needPhoto: "Please add a photo first.", sending: "Sending report…", sendErr: "Could not send the report. Please check your internet connection and try again.",
+  },
+  te: {
+    title: "🚨 రోడ్డు ప్రమాదాన్ని నివేదించండి", sub: "ట్రాఫిక్ కెమెరా లేకపోయినా ఎవరైనా నివేదించవచ్చు.",
+    strip: "ప్రాణాపాయ అత్యవసర పరిస్థితిలో వెంటనే కాల్ చేయండి:",
+    step1: "ఫోటో జోడించండి", photobtn: "ఫోటో తీయండి / ఎంచుకోండి",
+    step2: "లొకేషన్ షేర్ చేయండి", locbtn: "నా ప్రస్తుత లొకేషన్ వాడండి", manual: "లొకేషన్‌ను మాన్యువల్‌గా నమోదు చేయండి",
+    village: "గ్రామం / పట్టణం", district: "జిల్లా", state: "రాష్ట్రం", pincode: "పిన్ కోడ్",
+    step3: "ఇది ఎంత తీవ్రంగా ఉంది?", step4: "మరేదైనా? (ఐచ్ఛికం)",
+    desc: "ఏం జరిగింది?", phone: "మీ ఫోన్ నంబర్ (ఐచ్ఛికం, కాల్‌బ్యాక్ కోసం)",
+    submit: "నివేదికను పంపండి",
+    sentTitle: "✅ నివేదిక పంపబడింది", addrLbl: "నమోదైన లొకేషన్:", notifiedLbl: "తెలియజేయబడింది:",
+    reportLbl: "పూర్తి నివేదిక:", again: "మరో ప్రమాదాన్ని నివేదించండి",
+    footer: "హైబ్రిడ్ AI ఆధారిత ట్రాఫిక్ ప్రమాద గుర్తింపు & అత్యవసర స్పందన వ్యవస్థ — భారతదేశం",
+    locating: "మీ లొకేషన్ పొందుతోంది…", locOk: "లొకేషన్ క్యాప్చర్ చేయబడింది:", locErr: "లొకేషన్ ఆటోమేటిక్‌గా పొందలేకపోయాము. దయచేసి కింద మాన్యువల్‌గా నమోదు చేయండి.",
+    needPhoto: "దయచేసి ముందుగా ఫోటో జోడించండి.", sending: "నివేదిక పంపుతోంది…", sendErr: "నివేదిక పంపలేకపోయాము. దయచేసి ఇంటర్నెట్ కనెక్షన్ చూసి మళ్లీ ప్రయత్నించండి.",
+  },
+  hi: {
+    title: "🚨 सड़क दुर्घटना की रिपोर्ट करें", sub: "पास में ट्रैफिक कैमरा न होने पर भी कोई भी रिपोर्ट कर सकता है।",
+    strip: "जानलेवा आपातकाल में अभी कॉल करें:",
+    step1: "फोटो जोड़ें", photobtn: "फोटो लें / चुनें",
+    step2: "लोकेशन साझा करें", locbtn: "मेरी मौजूदा लोकेशन का उपयोग करें", manual: "लोकेशन मैन्युअल रूप से दर्ज करें",
+    village: "गाँव / कस्बा", district: "जिला", state: "राज्य", pincode: "पिन कोड",
+    step3: "यह कितना गंभीर लग रहा है?", step4: "कुछ और? (वैकल्पिक)",
+    desc: "क्या हुआ?", phone: "आपका फोन नंबर (वैकल्पिक, कॉलबैक के लिए)",
+    submit: "रिपोर्ट भेजें",
+    sentTitle: "✅ रिपोर्ट भेज दी गई", addrLbl: "दर्ज लोकेशन:", notifiedLbl: "सूचित किया गया:",
+    reportLbl: "पूरी रिपोर्ट:", again: "एक और दुर्घटना रिपोर्ट करें",
+    footer: "हाइब्रिड AI आधारित ट्रैफिक दुर्घटना पहचान और आपातकालीन प्रतिक्रिया प्रणाली — भारत",
+    locating: "आपकी लोकेशन प्राप्त की जा रही है…", locOk: "लोकेशन दर्ज की गई:", locErr: "लोकेशन अपने आप नहीं मिल पाई। कृपया नीचे मैन्युअल रूप से दर्ज करें।",
+    needPhoto: "कृपया पहले एक फोटो जोड़ें।", sending: "रिपोर्ट भेजी जा रही है…", sendErr: "रिपोर्ट नहीं भेजी जा सकी। कृपया इंटरनेट कनेक्शन जांचें और फिर से प्रयास करें।",
+  },
+};
+
+let currentLang = "en";
+function applyLang(lang) {
+  currentLang = lang;
+  const t = TXT[lang];
+  document.querySelectorAll(".lang-btn").forEach(b => b.classList.toggle("active", b.dataset.lang === lang));
+  const map = {
+    "t-title":"title","t-sub":"sub","t-strip":"strip","t-step1":"step1","t-photobtn":"photobtn",
+    "t-step2":"step2","t-locbtn":"locbtn","t-manual":"manual","t-village":"village","t-district":"district",
+    "t-state":"state","t-pincode":"pincode","t-step3":"step3","t-step4":"step4","t-desc":"desc","t-phone":"phone",
+    "t-submit":"submit","t-sentTitle":"sentTitle","t-addrLbl":"addrLbl","t-notifiedLbl":"notifiedLbl",
+    "t-reportLbl":"reportLbl","t-again":"again","t-footer":"footer",
+  };
+  Object.entries(map).forEach(([id, key]) => { const el = document.getElementById(id); if (el) el.textContent = t[key]; });
+}
+document.querySelectorAll(".lang-btn").forEach(b => b.addEventListener("click", () => applyLang(b.dataset.lang)));
+
+// ---- Photo ----
+let photoFile = null;
+document.getElementById("photoBtn").addEventListener("click", () => document.getElementById("photoInput").click());
+document.getElementById("photoInput").addEventListener("change", (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  photoFile = file;
+  const preview = document.getElementById("preview");
+  preview.src = URL.createObjectURL(file);
+  preview.style.display = "block";
+  document.getElementById("photoStatus").innerHTML = `<span class="status-ok">✔ ${file.name}</span>`;
+  updateSubmitState();
+});
+
+// ---- Location ----
+let locationData = { lat: null, lon: null };
+document.getElementById("locBtn").addEventListener("click", () => {
+  const status = document.getElementById("locStatus");
+  if (!navigator.geolocation) { status.innerHTML = `<span class="status-err">${TXT[currentLang].locErr}</span>`; return; }
+  status.textContent = TXT[currentLang].locating;
+  navigator.geolocation.getCurrentPosition(async (pos) => {
+    locationData.lat = pos.coords.latitude;
+    locationData.lon = pos.coords.longitude;
+    status.textContent = TXT[currentLang].locating + " (📡)";
+    try {
+      const geo = await fetch(`${API_BASE}/api/geocode?lat=${locationData.lat}&lon=${locationData.lon}`).then(r => r.json());
+      const addr = geo.display_address || [geo.village, geo.town, geo.district, geo.state].filter(Boolean).join(", ");
+      status.innerHTML = `<span class="status-ok">✔ ${TXT[currentLang].locOk} ${addr || (locationData.lat.toFixed(4)+", "+locationData.lon.toFixed(4))}</span>`;
+      if (geo.village) document.getElementById("villageInput").value = geo.village;
+      if (geo.district) document.getElementById("districtInput").value = geo.district;
+      if (geo.state) document.getElementById("stateInput").value = geo.state;
+      if (geo.pincode) document.getElementById("pincodeInput").value = geo.pincode;
+    } catch (err) {
+      status.innerHTML = `<span class="status-ok">✔ GPS: ${locationData.lat.toFixed(4)}, ${locationData.lon.toFixed(4)}</span>`;
+    }
+    updateSubmitState();
+  }, () => {
+    status.innerHTML = `<span class="status-err">${TXT[currentLang].locErr}</span>`;
+  }, { enableHighAccuracy: true, timeout: 12000 });
+});
+
+document.getElementById("manualToggle").addEventListener("click", () => {
+  document.getElementById("manualFields").classList.toggle("open");
+});
+
+// ---- Severity ----
+let selectedSeverity = "Not sure";
+document.querySelectorAll(".sev-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".sev-btn").forEach(b => b.classList.remove("selected"));
+    btn.classList.add("selected");
+    selectedSeverity = btn.dataset.sev;
+  });
+});
+
+function updateSubmitState() {
+  document.getElementById("submitBtn").disabled = !photoFile;
+}
+
+// ---- Submit ----
+document.getElementById("submitBtn").addEventListener("click", async () => {
+  const status = document.getElementById("submitStatus");
+  if (!photoFile) { status.innerHTML = `<span class="status-err">${TXT[currentLang].needPhoto}</span>`; return; }
+
+  const submitBtn = document.getElementById("submitBtn");
+  submitBtn.disabled = true;
+  status.textContent = TXT[currentLang].sending;
+
+  const fd = new FormData();
+  fd.append("image", photoFile);
+  if (locationData.lat != null) fd.append("lat", locationData.lat);
+  if (locationData.lon != null) fd.append("lon", locationData.lon);
+  const v = document.getElementById("villageInput").value; if (v) fd.append("village", v);
+  const d = document.getElementById("districtInput").value; if (d) fd.append("district", d);
+  const s = document.getElementById("stateInput").value; if (s) fd.append("state", s);
+  const p = document.getElementById("pincodeInput").value; if (p) fd.append("pincode", p);
+  fd.append("severity_label", selectedSeverity);
+  const desc = document.getElementById("descInput").value; if (desc) fd.append("description", desc);
+  const phone = document.getElementById("phoneInput").value; if (phone) fd.append("reporter_phone", phone);
+
+  try {
+    const res = await fetch(`${API_BASE}/api/citizen/report`, { method: "POST", body: fd });
+    if (!res.ok) throw new Error("bad response");
+    const data = await res.json();
+
+    document.getElementById("refNo").textContent = data.reference_no;
+    document.getElementById("addrOut").textContent = data.address;
+    document.getElementById("reportOut").textContent = data.report;
+    document.getElementById("deptChips").innerHTML = (data.notified_departments || [])
+      .map(dep => `<span class="dept-chip">📣 ${dep}</span>`).join("");
+
+    document.getElementById("formScreen").style.display = "none";
+    document.getElementById("confirmScreen").style.display = "block";
+    window.scrollTo(0, 0);
+  } catch (err) {
+    status.innerHTML = `<span class="status-err">${TXT[currentLang].sendErr}</span>`;
+    submitBtn.disabled = false;
+  }
+});
+
+document.getElementById("againBtn").addEventListener("click", () => window.location.reload());
+</script>
+</body>
+</html>
